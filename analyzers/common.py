@@ -99,8 +99,6 @@ def process_logs(
     """
     if output_stream is None:
         output_stream = sys.stdout
-    # Tee to stderr when output goes to a file so user sees matches in terminal
-    tee_to_stderr = output_stream is not sys.stdout
 
     regex = re.compile(pattern) if pattern else None
     total_lines = 0
@@ -112,8 +110,6 @@ def process_logs(
 
     def _emit(line: str) -> None:
         print(line, file=output_stream, flush=True)
-        if tee_to_stderr:
-            print(f"  MATCH> {line}", file=sys.stderr)
 
     for batch_start in range(0, len(keys), batch_size):
         batch = keys[batch_start:batch_start + batch_size]
