@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from analyzers.common import (
-    AnalysisResult,
     list_s3_objects,
     parse_time_range,
     process_logs,
@@ -18,19 +17,6 @@ class LoggingConfig(NamedTuple):
     enabled: bool
     bucket: str
     prefix: str
-
-
-def register_subparser(subparsers: argparse._SubParsersAction, parents: list | None = None) -> None:
-    """Register the 'cloudfront' subcommand."""
-    parser = subparsers.add_parser(
-        "cloudfront",
-        aliases=["cf"],
-        parents=parents or [],
-        help="Analyze CloudFront access logs",
-        description="Retrieve and analyze AWS CloudFront access logs from S3",
-    )
-    parser.add_argument("distribution_id", help="CloudFront distribution ID")
-    parser.set_defaults(handler=run)
 
 
 def get_logging_config(cf_client, distribution_id: str) -> LoggingConfig:
@@ -76,11 +62,12 @@ def run(args: argparse.Namespace, session) -> None:
     """Execute the CloudFront log analysis pipeline."""
     from botocore.exceptions import ClientError
 
+    distribution_id = args.resource_id
     start, end = parse_time_range(args.time_range, args.start, args.end)
 
     if args.verbose:
         print(
-            f"Distribution: {args.distribution_id}\n"
+            f"Distribution: {distribution_id}\n"
             f"Time range: {start.isoformat()} -> {end.isoformat()}",
             file=sys.stderr,
         )
@@ -88,11 +75,11 @@ def run(args: argparse.Namespace, session) -> None:
     cf_client = session.client("cloudfront")
 
     try:
-        config = get_logging_config(cf_client, args.distribution_id)
+        config = get_logging_config(cf_client, distribution_id)
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         if code == "NoSuchDistribution":
-            print(f"Error: distribution {args.distribution_id} not found", file=sys.stderr)
+            print(f"Error: distribution {distribution_id} not found", file=sys.stderr)
         elif code in ("AccessDenied", "403"):
             print("Error: access denied. Check cloudfront:GetDistributionConfig permission", file=sys.stderr)
         else:
@@ -100,13 +87,13 @@ def run(args: argparse.Namespace, session) -> None:
         sys.exit(1)
 
     if not config.enabled:
-        print(f"Error: logging is not enabled for distribution {args.distribution_id}", file=sys.stderr)
+        print(f"Error: logging is not enabled for distribution {distribution_id}", file=sys.stderr)
         sys.exit(1)
 
     if args.verbose:
         print(f"Logging bucket: {config.bucket}\nLogging prefix: {config.prefix}", file=sys.stderr)
 
-    prefixes = build_s3_prefixes(config.prefix, args.distribution_id, start, end)
+    prefixes = build_s3_prefixes(config.prefix, distribution_id, start, end)
     s3_client = session.client("s3")
 
     if args.verbose:
@@ -119,7 +106,7 @@ def run(args: argparse.Namespace, session) -> None:
         sys.exit(0)
 
     if args.dry_run:
-        print(f"Distribution: {args.distribution_id}")
+        print(f"Distribution: {distribution_id}")
         print(f"Logging bucket: {config.bucket}")
         print(f"Logging prefix: {config.prefix}")
         print(f"Time range: {start.isoformat()} -> {end.isoformat()}")
