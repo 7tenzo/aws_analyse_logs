@@ -28,6 +28,9 @@ def get_logging_config(cf_client, distribution_id: str) -> LoggingConfig:
     raw_bucket = logging_cfg.get("Bucket", "")
     bucket = re.sub(r"\.s3\.amazonaws\.com$", "", raw_bucket)
     prefix = logging_cfg.get("Prefix", "")
+    # Ensure prefix ends with '/' so S3 listing works correctly
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
 
     return LoggingConfig(enabled=enabled, bucket=bucket, prefix=prefix)
 
