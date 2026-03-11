@@ -113,7 +113,7 @@ def process_logs(
     def _emit(line: str) -> None:
         print(line, file=output_stream, flush=True)
         if tee_to_stderr:
-            print(line, file=sys.stderr)
+            print(f"  MATCH> {line}", file=sys.stderr)
 
     for batch_start in range(0, len(keys), batch_size):
         batch = keys[batch_start:batch_start + batch_size]
