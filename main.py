@@ -101,6 +101,34 @@ def main() -> None:
         session_kwargs["region_name"] = args.aws_region
     session = boto3.Session(**session_kwargs)
 
+    creds = session.get_credentials()
+    frozen = creds.get_frozen_credentials() if creds else None
+
+    # Resolve canonical service name from alias
+    canonical_name = SERVICES[args.service][0]
+
+    print(
+        "\n"
+        "=== AWS Log Analyzer ===\n"
+        "\n"
+        f"  AWS profile  : {session.profile_name or '(default/env)'}\n"
+        f"  AWS region   : {session.region_name or '(not set)'}\n"
+        f"  AWS identity : {'configured' if frozen and frozen.access_key else 'NOT FOUND'}\n"
+        "\n"
+        f"  Service      : {canonical_name}\n"
+        f"  Resource ID  : {getattr(args, 'resource_id', 'N/A')}\n"
+        f"  Time range   : {args.time_range or (args.start + ' -> ' + (args.end or 'now'))}\n"
+        f"  Pattern      : {args.pattern or '(all lines)'}\n"
+        f"  Count only   : {args.count}\n"
+        f"  Dry run      : {args.dry_run}\n"
+        f"  Workers      : {args.workers}\n",
+        file=sys.stderr,
+    )
+
+    if not frozen or not frozen.access_key:
+        print("Error: no AWS credentials found. Use awsume or --profile.", file=sys.stderr)
+        sys.exit(1)
+
     _, handler, _, _ = SERVICES[args.service]
     handler(args, session)
 
