@@ -131,6 +131,7 @@ def run(args: argparse.Namespace, session) -> None:
         count_only=args.count,
         verbose=args.verbose,
         workers=args.workers,
+        output_stream=getattr(args, "output_stream", None),
     )
 
     print(

@@ -87,14 +87,21 @@ def process_logs(
     count_only: bool,
     verbose: bool,
     workers: int,
+    output_stream=None,
     skip_prefix: str = "#",
     batch_size: int = 50,
 ) -> AnalysisResult:
     """Download, decompress and analyze log files in parallel batches.
 
     Processes files in batches to bound memory usage. Matching lines are
-    streamed to stdout immediately instead of accumulated in memory.
+    streamed immediately instead of accumulated in memory.
+    When output_stream is a file (not stdout), lines are also echoed to stderr.
     """
+    if output_stream is None:
+        output_stream = sys.stdout
+    # Tee to stderr when output goes to a file so user sees matches in terminal
+    tee_to_stderr = output_stream is not sys.stdout
+
     regex = re.compile(pattern) if pattern else None
     total_lines = 0
     matched_lines = 0
@@ -102,6 +109,11 @@ def process_logs(
 
     def _download(key: str) -> tuple[str, str]:
         return key, download_and_decompress(s3_client, bucket, key)
+
+    def _emit(line: str) -> None:
+        print(line, file=output_stream)
+        if tee_to_stderr:
+            print(line, file=sys.stderr)
 
     for batch_start in range(0, len(keys), batch_size):
         batch = keys[batch_start:batch_start + batch_size]
@@ -132,11 +144,11 @@ def process_logs(
                         if regex.search(line):
                             matched_lines += 1
                             if not count_only:
-                                print(line)
+                                _emit(line)
                     else:
                         matched_lines += 1
                         if not count_only:
-                            print(line)
+                            _emit(line)
 
     return AnalysisResult(
         total_files=len(keys),
