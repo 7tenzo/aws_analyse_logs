@@ -4,6 +4,7 @@
 import argparse
 import re
 import sys
+import time
 
 from analyzers import cloudfront
 
@@ -129,8 +130,12 @@ def main() -> None:
         print("Error: no AWS credentials found. Use awsume or --profile.", file=sys.stderr)
         sys.exit(1)
 
+    t0 = time.monotonic()
     _, handler, _, _ = SERVICES[args.service]
     handler(args, session)
+    elapsed = time.monotonic() - t0
+
+    print(f"\nCompleted in {elapsed:.1f}s", file=sys.stderr)
 
 
 if __name__ == "__main__":
