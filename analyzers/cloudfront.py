@@ -133,13 +133,9 @@ def run(args: argparse.Namespace, session) -> None:
         workers=args.workers,
     )
 
-    summary = (
+    print(
         f"\nScanned {result.total_files} file(s), {result.total_lines} line(s)\n"
         f"Pattern: {args.pattern or '(all)'}\n"
-        f"Matches: {result.matched_lines}"
+        f"Matches: {result.matched_lines}",
+        file=sys.stderr,
     )
-    print(summary, file=sys.stderr)
-
-    if not args.count:
-        for line in result.matches:
-            print(line)

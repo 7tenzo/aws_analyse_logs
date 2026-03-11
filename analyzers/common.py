@@ -13,7 +13,6 @@ class AnalysisResult(NamedTuple):
     total_files: int
     total_lines: int
     matched_lines: int
-    matches: list
 
 
 def parse_time_range(
@@ -89,49 +88,58 @@ def process_logs(
     verbose: bool,
     workers: int,
     skip_prefix: str = "#",
+    batch_size: int = 50,
 ) -> AnalysisResult:
-    """Download, decompress and analyze log files in parallel."""
+    """Download, decompress and analyze log files in parallel batches.
+
+    Processes files in batches to bound memory usage. Matching lines are
+    streamed to stdout immediately instead of accumulated in memory.
+    """
     regex = re.compile(pattern) if pattern else None
     total_lines = 0
     matched_lines = 0
-    matches = []
+    processed = 0
 
     def _download(key: str) -> tuple[str, str]:
         return key, download_and_decompress(s3_client, bucket, key)
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_download, k): k for k in keys}
-        processed = 0
+    for batch_start in range(0, len(keys), batch_size):
+        batch = keys[batch_start:batch_start + batch_size]
 
-        for future in as_completed(futures):
-            key = futures[future]
-            try:
-                _, content = future.result()
-            except Exception as exc:
-                print(f"  Warning: failed to process {key}: {exc}", file=sys.stderr)
-                continue
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_download, k): k for k in batch}
 
-            processed += 1
-            if verbose:
-                print(f"  [{processed}/{len(keys)}] Processing {key}", file=sys.stderr)
-
-            for line in content.splitlines():
-                if skip_prefix and line.startswith(skip_prefix):
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    _, content = future.result()
+                except Exception as exc:
+                    print(f"  Warning: failed to process {key}: {exc}", file=sys.stderr)
                     continue
-                total_lines += 1
-                if regex:
-                    if regex.search(line):
+
+                processed += 1
+                if verbose or processed % 100 == 0:
+                    print(
+                        f"  [{processed}/{len(keys)}] Processing {key}",
+                        file=sys.stderr,
+                    )
+
+                for line in content.splitlines():
+                    if skip_prefix and line.startswith(skip_prefix):
+                        continue
+                    total_lines += 1
+                    if regex:
+                        if regex.search(line):
+                            matched_lines += 1
+                            if not count_only:
+                                print(line)
+                    else:
                         matched_lines += 1
                         if not count_only:
-                            matches.append(line)
-                else:
-                    matched_lines += 1
-                    if not count_only:
-                        matches.append(line)
+                            print(line)
 
     return AnalysisResult(
         total_files=len(keys),
         total_lines=total_lines,
         matched_lines=matched_lines,
-        matches=matches,
     )
