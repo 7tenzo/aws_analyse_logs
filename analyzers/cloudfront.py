@@ -64,14 +64,6 @@ def run(args: argparse.Namespace, session) -> None:
 
     distribution_id = args.resource_id
     start, end = parse_time_range(args.time_range, args.start, args.end)
-
-    if args.verbose:
-        print(
-            f"Distribution: {distribution_id}\n"
-            f"Time range: {start.isoformat()} -> {end.isoformat()}",
-            file=sys.stderr,
-        )
-
     cf_client = session.client("cloudfront")
 
     try:
@@ -90,8 +82,16 @@ def run(args: argparse.Namespace, session) -> None:
         print(f"Error: logging is not enabled for distribution {distribution_id}", file=sys.stderr)
         sys.exit(1)
 
-    if args.verbose:
-        print(f"Logging bucket: {config.bucket}\nLogging prefix: {config.prefix}", file=sys.stderr)
+    print(
+        "--- CloudFront Logging Config ---\n"
+        "\n"
+        f"  Distribution : {distribution_id}\n"
+        f"  Logging      : enabled\n"
+        f"  S3 bucket    : {config.bucket}\n"
+        f"  S3 prefix    : {config.prefix or '(none)'}\n"
+        f"  Time range   : {start.isoformat()} -> {end.isoformat()}\n",
+        file=sys.stderr,
+    )
 
     prefixes = build_s3_prefixes(config.prefix, distribution_id, start, end)
     s3_client = session.client("s3")
@@ -102,8 +102,10 @@ def run(args: argparse.Namespace, session) -> None:
     keys = list_s3_objects(s3_client, config.bucket, prefixes, verbose=args.verbose)
 
     if not keys:
-        print("No log files found for the specified time range", file=sys.stderr)
+        print("No log files found for the specified time range.", file=sys.stderr)
         sys.exit(0)
+
+    print(f"  Log files    : {len(keys)} found\n", file=sys.stderr)
 
     if args.dry_run:
         print(f"Distribution: {distribution_id}")
