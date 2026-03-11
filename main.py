@@ -8,7 +8,28 @@ import sys
 from analyzers import cloudfront
 
 
+def _shared_parser() -> argparse.ArgumentParser:
+    """Flags shared by all subcommands. Used as parent parser so they work in any position."""
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--profile", dest="aws_profile", help="AWS profile name (compatible with awsume)")
+    parent.add_argument("--region", dest="aws_region", help="AWS region override")
+    parent.add_argument("--dry-run", action="store_true", help="Preview actions without executing")
+    parent.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parent.add_argument("--workers", "-w", type=int, default=10, help="Parallel download workers (default: 10)")
+
+    time_group = parent.add_mutually_exclusive_group(required=True)
+    time_group.add_argument("--range", "-r", dest="time_range", help="Relative time range: 30m, 1h, 7d, 2w")
+    time_group.add_argument("--start", "-s", help="Start datetime (ISO 8601, UTC if no tz)")
+    parent.add_argument("--end", "-e", help="End datetime (default: now). Used with --start")
+
+    parent.add_argument("--pattern", "-p", help="Regex pattern to search for in logs")
+    parent.add_argument("--count", action="store_true", help="Show match count only")
+    return parent
+
+
 def build_parser() -> argparse.ArgumentParser:
+    shared = _shared_parser()
+
     parser = argparse.ArgumentParser(
         description="Analyze logs from various AWS services",
         epilog=(
@@ -22,29 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Global flags (shared across all subcommands)
-    parser.add_argument("--profile", dest="aws_profile", help="AWS profile name (compatible with awsume)")
-    parser.add_argument("--region", dest="aws_region", help="AWS region override")
-    parser.add_argument("--dry-run", action="store_true", help="Preview actions without executing")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--workers", "-w", type=int, default=10, help="Parallel download workers (default: 10)")
-
-    # Time range (shared across all subcommands)
-    time_group = parser.add_mutually_exclusive_group(required=True)
-    time_group.add_argument("--range", "-r", dest="time_range", help="Relative time range: 30m, 1h, 7d, 2w")
-    time_group.add_argument("--start", "-s", help="Start datetime (ISO 8601, UTC if no tz)")
-    parser.add_argument("--end", "-e", help="End datetime (default: now). Used with --start")
-
-    # Pattern (shared across all subcommands)
-    parser.add_argument("--pattern", "-p", help="Regex pattern to search for in logs")
-    parser.add_argument("--count", action="store_true", help="Show match count only")
-
-    # Subcommands — one per AWS service
     subparsers = parser.add_subparsers(dest="service", help="AWS service to analyze")
-    cloudfront.register_subparser(subparsers)
-    # Future: alb.register_subparser(subparsers)
-    # Future: waf.register_subparser(subparsers)
-    # Future: apigateway.register_subparser(subparsers)
+    cloudfront.register_subparser(subparsers, parents=[shared])
+    # Future: alb.register_subparser(subparsers, parents=[shared])
+    # Future: waf.register_subparser(subparsers, parents=[shared])
 
     return parser
 
@@ -66,7 +68,6 @@ def main() -> None:
         except re.error as exc:
             parser.error(f"invalid regex pattern: {exc}")
 
-    # Lazy import so --help works without boto3
     try:
         import boto3
     except ImportError:

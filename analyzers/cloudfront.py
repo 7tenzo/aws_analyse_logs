@@ -20,11 +20,12 @@ class LoggingConfig(NamedTuple):
     prefix: str
 
 
-def register_subparser(subparsers: argparse._SubParsersAction) -> None:
+def register_subparser(subparsers: argparse._SubParsersAction, parents: list | None = None) -> None:
     """Register the 'cloudfront' subcommand."""
     parser = subparsers.add_parser(
         "cloudfront",
         aliases=["cf"],
+        parents=parents or [],
         help="Analyze CloudFront access logs",
         description="Retrieve and analyze AWS CloudFront access logs from S3",
     )
