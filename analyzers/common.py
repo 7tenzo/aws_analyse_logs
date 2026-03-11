@@ -111,7 +111,7 @@ def process_logs(
         return key, download_and_decompress(s3_client, bucket, key)
 
     def _emit(line: str) -> None:
-        print(line, file=output_stream)
+        print(line, file=output_stream, flush=True)
         if tee_to_stderr:
             print(line, file=sys.stderr)
 
