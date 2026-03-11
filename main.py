@@ -7,34 +7,36 @@ import sys
 
 from analyzers import cloudfront
 
-
-def _shared_parser() -> argparse.ArgumentParser:
-    """Flags shared by all subcommands. Used as parent parser so they work in any position."""
-    parent = argparse.ArgumentParser(add_help=False)
-    parent.add_argument("--profile", dest="aws_profile", help="AWS profile name (compatible with awsume)")
-    parent.add_argument("--region", dest="aws_region", help="AWS region override")
-    parent.add_argument("--dry-run", action="store_true", help="Preview actions without executing")
-    parent.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parent.add_argument("--workers", "-w", type=int, default=10, help="Parallel download workers (default: 10)")
-
-    time_group = parent.add_mutually_exclusive_group(required=True)
-    time_group.add_argument("--range", "-r", dest="time_range", help="Relative time range: 30m, 1h, 7d, 2w")
-    time_group.add_argument("--start", "-s", help="Start datetime (ISO 8601, UTC if no tz)")
-    parent.add_argument("--end", "-e", help="End datetime (default: now). Used with --start")
-
-    parent.add_argument("--pattern", "-p", help="Regex pattern to search for in logs")
-    parent.add_argument("--count", action="store_true", help="Show match count only")
-    return parent
+# Registry: service name -> (aliases, handler, extra_args_fn, help)
+SERVICES: dict[str, tuple] = {}
 
 
-def build_parser() -> argparse.ArgumentParser:
-    shared = _shared_parser()
+def _register(name: str, aliases: list[str], handler, extra_args_fn, help_text: str) -> None:
+    entry = (name, handler, extra_args_fn, help_text)
+    SERVICES[name] = entry
+    for alias in aliases:
+        SERVICES[alias] = entry
+
+
+def _add_cloudfront_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("resource_id", help="CloudFront distribution ID")
+
+
+_register("cloudfront", ["cf"], cloudfront.run, _add_cloudfront_args, "CloudFront access logs (S3 legacy)")
+# Future: _register("alb", ["lb"], alb.run, _add_alb_args, "ALB access logs")
+
+
+def build_parser(service_name: str | None = None) -> argparse.ArgumentParser:
+    service_list = "\n".join(
+        f"  {name:<16} {entry[3]}"
+        for name, entry in SERVICES.items()
+        if entry[0] == name  # skip aliases
+    )
 
     parser = argparse.ArgumentParser(
         description="Analyze logs from various AWS services",
         epilog=(
-            "Supported services:\n"
-            "  cloudfront (cf)   CloudFront access logs (S3 legacy)\n"
+            f"Supported services:\n{service_list}\n"
             "\n"
             "AWS authentication:\n"
             "  awsume my-profile && %(prog)s cloudfront E1A2B3C4D5 --range 1h\n"
@@ -43,21 +45,39 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    subparsers = parser.add_subparsers(dest="service", help="AWS service to analyze")
-    cloudfront.register_subparser(subparsers, parents=[shared])
-    # Future: alb.register_subparser(subparsers, parents=[shared])
-    # Future: waf.register_subparser(subparsers, parents=[shared])
+    parser.add_argument("service", choices=list(SERVICES.keys()), help="AWS service to analyze")
+    parser.add_argument("--profile", dest="aws_profile", help="AWS profile name (compatible with awsume)")
+    parser.add_argument("--region", dest="aws_region", help="AWS region override")
+    parser.add_argument("--dry-run", action="store_true", help="Preview actions without executing")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--workers", "-w", type=int, default=10, help="Parallel download workers (default: 10)")
+
+    time_group = parser.add_mutually_exclusive_group(required=True)
+    time_group.add_argument("--range", "-r", dest="time_range", help="Relative time range: 30m, 1h, 7d, 2w")
+    time_group.add_argument("--start", "-s", help="Start datetime (ISO 8601, UTC if no tz)")
+    parser.add_argument("--end", "-e", help="End datetime (default: now). Used with --start")
+
+    parser.add_argument("--pattern", "-p", help="Regex pattern to search for in logs")
+    parser.add_argument("--count", action="store_true", help="Show match count only")
+
+    # Add service-specific args if we know the service
+    if service_name and service_name in SERVICES:
+        SERVICES[service_name][2](parser)
 
     return parser
 
 
-def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+def _detect_service() -> str | None:
+    """Scan argv for a known service name (works regardless of flag positions)."""
+    for arg in sys.argv[1:]:
+        if arg in SERVICES:
+            return arg
+    return None
 
-    if not args.service:
-        parser.print_help()
-        sys.exit(1)
+
+def main() -> None:
+    parser = build_parser(_detect_service())
+    args = parser.parse_args()
 
     if args.end and not args.start:
         parser.error("--end requires --start")
@@ -81,7 +101,8 @@ def main() -> None:
         session_kwargs["region_name"] = args.aws_region
     session = boto3.Session(**session_kwargs)
 
-    args.handler(args, session)
+    _, handler, _, _ = SERVICES[args.service]
+    handler(args, session)
 
 
 if __name__ == "__main__":
