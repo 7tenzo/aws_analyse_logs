@@ -60,6 +60,7 @@ def build_parser(service_name: str | None = None) -> argparse.ArgumentParser:
 
     parser.add_argument("--pattern", "-p", help="Regex pattern to search for in logs")
     parser.add_argument("--count", action="store_true", help="Show match count only")
+    parser.add_argument("--output", "-o", dest="output_file", help="Write matching lines to file (also shown in terminal)")
 
     # Add service-specific args if we know the service
     if service_name and service_name in SERVICES:
@@ -122,7 +123,8 @@ def main() -> None:
         f"  Pattern      : {args.pattern or '(all lines)'}\n"
         f"  Count only   : {args.count}\n"
         f"  Dry run      : {args.dry_run}\n"
-        f"  Workers      : {args.workers}\n",
+        f"  Workers      : {args.workers}\n"
+        f"  Output file  : {args.output_file or '(stdout)'}\n",
         file=sys.stderr,
     )
 
@@ -130,10 +132,25 @@ def main() -> None:
         print("Error: no AWS credentials found. Use awsume or --profile.", file=sys.stderr)
         sys.exit(1)
 
+    # Open output file if specified, otherwise use stdout
+    output_fp = None
+    if args.output_file:
+        output_fp = open(args.output_file, "w")
+        args.output_stream = output_fp
+    else:
+        args.output_stream = sys.stdout
+
     t0 = time.monotonic()
     _, handler, _, _ = SERVICES[args.service]
-    handler(args, session)
+    try:
+        handler(args, session)
+    finally:
+        if output_fp:
+            output_fp.close()
     elapsed = time.monotonic() - t0
+
+    if args.output_file:
+        print(f"  Output saved : {args.output_file}", file=sys.stderr)
 
     print(f"\nCompleted in {elapsed:.1f}s", file=sys.stderr)
 
